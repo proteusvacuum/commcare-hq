@@ -702,6 +702,85 @@ class CaseDeduplicationActionTest(TestCase):
         self.assertEqual(updated_parent_case.get_case_property('name'), new_parent_case_property_value)
 
 
+    @patch("corehq.apps.data_interfaces.models.find_duplicate_case_ids")
+    def test_multiple_runs(self, find_duplicates_mock):
+        """When running the rule multiple times on different cases, duplicates
+        should be progressively added as more are found
+
+        """
+        duplicates, uniques = self._create_cases(3)
+        find_duplicates_mock.return_value = [duplicate.case_id for duplicate in duplicates]
+
+        self.rule.run_actions_when_case_matches(duplicates[0])
+        self.assertItemsEqual(
+            (CaseDuplicate.objects
+            .get(case_id=duplicates[0].case_id)
+            .potential_duplicates.all()
+            .values_list('case_id', flat=True)),
+            [duplicates[1].case_id, duplicates[2].case_id]
+        )
+        self.assertItemsEqual(
+            (CaseDuplicate.objects
+            .get(case_id=duplicates[1].case_id)
+            .potential_duplicates.all()
+            .values_list('case_id', flat=True)),
+            [duplicates[0].case_id]
+        )
+        self.assertItemsEqual(
+            (CaseDuplicate.objects
+            .get(case_id=duplicates[2].case_id)
+            .potential_duplicates.all()
+            .values_list('case_id', flat=True)),
+            [duplicates[0].case_id]
+        )
+
+        self.rule.run_actions_when_case_matches(duplicates[1])
+        self.assertItemsEqual(
+            (CaseDuplicate.objects
+            .get(case_id=duplicates[0].case_id)
+            .potential_duplicates.all()
+            .values_list('case_id', flat=True)),
+            [duplicates[1].case_id, duplicates[2].case_id]
+        )
+        self.assertItemsEqual(
+            (CaseDuplicate.objects
+            .get(case_id=duplicates[1].case_id)
+            .potential_duplicates.all()
+            .values_list('case_id', flat=True)),
+            [duplicates[0].case_id, duplicates[2].case_id]
+        )
+        self.assertItemsEqual(
+            (CaseDuplicate.objects
+            .get(case_id=duplicates[2].case_id)
+            .potential_duplicates.all()
+            .values_list('case_id', flat=True)),
+            [duplicates[0].case_id, duplicates[1].case_id]
+        )
+
+        self.rule.run_actions_when_case_matches(duplicates[2])
+        self.assertItemsEqual(
+            (CaseDuplicate.objects
+            .get(case_id=duplicates[0].case_id)
+            .potential_duplicates.all()
+            .values_list('case_id', flat=True)),
+            [duplicates[1].case_id, duplicates[2].case_id]
+        )
+        self.assertItemsEqual(
+            (CaseDuplicate.objects
+            .get(case_id=duplicates[1].case_id)
+            .potential_duplicates.all()
+            .values_list('case_id', flat=True)),
+            [duplicates[0].case_id, duplicates[2].case_id]
+        )
+        self.assertItemsEqual(
+            (CaseDuplicate.objects
+            .get(case_id=duplicates[2].case_id)
+            .potential_duplicates.all()
+            .values_list('case_id', flat=True)),
+            [duplicates[0].case_id, duplicates[1].case_id]
+        )
+
+
 @override_settings(RUN_UNKNOWN_USER_PILLOW=False)
 @override_settings(RUN_FORM_META_PILLOW=False)
 @flag_enabled('CASE_DEDUPE')
